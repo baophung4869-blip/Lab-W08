@@ -47,3 +47,72 @@ Họ tên: Phùng Ngọc Bảo
    * `message` (`str`): Nội dung chi tiết của cảnh báo.
    * `severity` (`AlertSeverity`): Mức độ cảnh báo (`Information`, `Warning`, `Critical`).
    * `occurred_at` (`datetime`): Thời điểm phát sinh cảnh báo.
+---
+
+## 4. Sơ đồ lớp UML (Kiến trúc tổng quát)
+
+```mermaid
+classDiagram
+    class TeachingDevice {
+        <<abstract>>
+        +str id
+        +str name
+        +DeviceStatus status
+        +Event status_changed
+        +Event alert_raised
+        +change_status(DeviceStatus new_status)
+        #_raise_alert(str message, AlertSeverity severity)
+        #_on_status_changed(DeviceStatusChangedEventArgs e)
+        #_on_alert_raised(DeviceAlertEventArgs e)
+    }
+
+    class ProjectorRemote {
+        +int battery_level
+        +update_battery_level(int new_level)
+    }
+
+    class AirConditionerRemote {
+        +str assigned_room
+        +bool is_responsive
+        +update_response_state(bool is_responsive)
+    }
+
+    class WirelessMicrophone {
+        +int battery_level
+        +int signal_quality
+        +update_battery_level(int new_level)
+        +update_signal_quality(int new_quality)
+    }
+
+    class ConsoleNotificationService {
+        +handle_alert(sender, DeviceAlertEventArgs e)
+    }
+
+    class DeviceAuditLogger {
+        +Sequence~str~ entries
+        +handle_status_changed(sender, DeviceStatusChangedEventArgs e)
+    }
+
+    class MaintenanceService {
+        +Sequence~str~ requests
+        +handle_critical_alert(sender, DeviceAlertEventArgs e)
+    }
+
+    class FilteredAlertSubscriber {
+        +handle_alert(sender, DeviceAlertEventArgs e)
+    }
+
+    class DeviceMonitoringCoordinator {
+        +subscribe()
+        +unsubscribe()
+        +dispose()
+    }
+
+    TeachingDevice <|-- ProjectorRemote
+    TeachingDevice <|-- AirConditionerRemote
+    TeachingDevice <|-- WirelessMicrophone
+
+    DeviceMonitoringCoordinator --> TeachingDevice : đăng ký/hủy đăng ký
+    DeviceMonitoringCoordinator --> ConsoleNotificationService : điều phối
+    DeviceMonitoringCoordinator --> DeviceAuditLogger : điều phối
+    DeviceMonitoringCoordinator --> MaintenanceService : điều phối
