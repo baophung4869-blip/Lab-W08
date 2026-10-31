@@ -7,6 +7,9 @@ Module định nghĩa các kiểu liệt kê, cấu trúc dữ liệu sự kiệ
 """
 from datetime import datetime
 from enum import Enum
+from typing import Any, Callable, Generic, List, TypeVar
+
+TEventArgs = TypeVar("TEventArgs")
 
 
 class DeviceStatus(Enum):
@@ -85,3 +88,30 @@ class DeviceAlertEventArgs:
     @property
     def occurred_at(self) -> datetime:
         return self._occurred_at
+
+
+class EventHandler(Generic[TEventArgs]):
+    """Lớp quản lý danh sách các hàm xử lý sự kiện (delegate multicast) cơ bản."""
+
+    def __init__(self) -> None:
+        self._handlers: List[Callable[[Any, TEventArgs], None]] = []
+
+    def __iadd__(
+        self, handler: Callable[[Any, TEventArgs], None]
+    ) -> "EventHandler[TEventArgs]":
+        """Đăng ký thêm một subscriber handler bằng toán tử +=."""
+        self._handlers.append(handler)
+        return self
+
+    def __isub__(
+        self, handler: Callable[[Any, TEventArgs], None]
+    ) -> "EventHandler[TEventArgs]":
+        """Hủy đăng ký một subscriber handler bằng toán tử -=."""
+        if handler in self._handlers:
+            self._handlers.remove(handler)
+        return self
+
+    def invoke(self, sender: Any, args: TEventArgs) -> None:
+        """Kích hoạt tuần tự tất cả các handler đã đăng ký."""
+        for handler in list(self._handlers):
+            handler(sender, args)
