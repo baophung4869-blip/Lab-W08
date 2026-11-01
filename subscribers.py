@@ -7,6 +7,7 @@ Module định nghĩa các lớp Subscriber lắng nghe sự kiện từ thiết
 """
 from typing import Any, List, Sequence
 from events import (
+    AlertSeverity,
     DeviceAlertEventArgs,
     DeviceStatusChangedEventArgs,
 )
@@ -41,3 +42,25 @@ class DeviceAuditLogger:
             f"{e.old_status.value} -> {e.new_status.value}"
         )
         self._entries.append(log_entry)
+
+
+class MaintenanceService:
+    """Dịch vụ tự động khởi tạo yêu cầu bảo trì khi nhận cảnh báo mức Critical."""
+
+    def __init__(self) -> None:
+        self._requests: List[str] = []
+
+    @property
+    def requests(self) -> Sequence[str]:
+        """Trả về danh sách các yêu cầu bảo trì ở dạng chỉ đọc (tuple)."""
+        return tuple(self._requests)
+
+    def handle_critical_alert(
+        self, sender: Any, e: DeviceAlertEventArgs
+    ) -> None:
+        """Lọc cảnh báo mức Critical và thêm yêu cầu bảo trì vào danh sách."""
+        if e.severity != AlertSeverity.CRITICAL:
+            return
+
+        request = f"Maintenance request for {e.device_id}: {e.message}"
+        self._requests.append(request)
