@@ -3,14 +3,18 @@
 Mã sinh viên: 20237303
 Họ tên: Phùng Ngọc Bảo
 /****************/
-Module định nghĩa các lớp Subscriber lắng nghe sự kiện từ thiết bị giảng dạy.
+Module định nghĩa các lớp Subscriber lắng nghe sự kiện từ thiết bị giảng dạy
+và cơ chế lọc thông báo bằng Delegate/Callback.
 """
-from typing import Any, List, Sequence
+from typing import Any, Callable, List, Sequence
 from events import (
     AlertSeverity,
     DeviceAlertEventArgs,
     DeviceStatusChangedEventArgs,
 )
+
+# Định nghĩa kiểu Delegate tự định nghĩa cho chính sách lọc thông báo
+AlertFilter = Callable[[DeviceAlertEventArgs], bool]
 
 
 class ConsoleNotificationService:
@@ -64,3 +68,28 @@ class MaintenanceService:
 
         request = f"Maintenance request for {e.device_id}: {e.message}"
         self._requests.append(request)
+
+
+class FilteredAlertSubscriber:
+    """
+    Subscriber sử dụng delegate AlertFilter và callback Action để lọc
+    và xử lý các sự kiện cảnh báo theo chính sách tùy biến.
+    """
+
+    def __init__(
+        self,
+        alert_filter: AlertFilter,
+        action: Callable[[DeviceAlertEventArgs], None],
+    ) -> None:
+        if alert_filter is None:
+            raise ValueError("Delegate bộ lọc (alert_filter) không được null.")
+        if action is None:
+            raise ValueError("Callback hành động (action) không được null.")
+
+        self._filter = alert_filter
+        self._action = action
+
+    def handle_alert(self, sender: Any, e: DeviceAlertEventArgs) -> None:
+        """Kiểm tra điều kiện qua delegate filter trước khi kích hoạt callback action."""
+        if self._filter(e):
+            self._action(e)
