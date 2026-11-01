@@ -7,6 +7,7 @@ Module định nghĩa lớp cơ sở trừu tượng TeachingDevice và các thi
 """
 from abc import ABC
 from datetime import datetime
+from typing import Optional
 from events import (
     AlertSeverity,
     DeviceAlertEventArgs,
@@ -126,20 +127,38 @@ class ProjectorRemote(TeachingDevice):
     def battery_level(self) -> int:
         return self._battery_level
 
+    @staticmethod
+    def _get_battery_zone(level: int) -> Optional[AlertSeverity]:
+        """Xác định vùng cảnh báo ứng với mức pin (None là vùng an toàn >= 20%)."""
+        if level == 0:
+            return AlertSeverity.CRITICAL
+        if level < 20:
+            return AlertSeverity.WARNING
+        return None
+
     def update_battery_level(self, new_level: int) -> None:
-        """Cập nhật mức pin (0-100) và phát cảnh báo khi pin yếu hoặc cạn pin."""
+        """
+        Cập nhật mức pin (0-100) và chỉ phát cảnh báo khi chuyển vùng trạng thái
+        (tránh phát cảnh báo lặp lại khi vẫn ở cùng một vùng).
+        """
         if not (0 <= new_level <= 100):
             raise InvalidDeviceReadingException(self.id, new_level)
 
+        old_zone = self._get_battery_zone(self._battery_level)
+        new_zone = self._get_battery_zone(new_level)
         self._battery_level = new_level
 
-        if new_level == 0:
+        # Không phát sinh cảnh báo nếu vẫn nằm trong cùng một vùng trạng thái
+        if new_zone is None or new_zone == old_zone:
+            return
+
+        if new_zone == AlertSeverity.CRITICAL:
             self._raise_alert(
                 "Điều khiển máy chiếu đã cạn sạch pin (0%).",
                 AlertSeverity.CRITICAL,
             )
-        elif new_level < 20:
+        elif new_zone == AlertSeverity.WARNING:
             self._raise_alert(
-                f"Mức pin điều khiển máy chiếu xuống thấp ({new_level}%).",
+                f"Mức pin điều khiển máy chiếu xuống thấp ({new_level}% < 20%).",
                 AlertSeverity.WARNING,
             )
