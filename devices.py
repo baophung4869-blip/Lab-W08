@@ -162,3 +162,40 @@ class ProjectorRemote(TeachingDevice):
                 f"Mức pin điều khiển máy chiếu xuống thấp ({new_level}% < 20%).",
                 AlertSeverity.WARNING,
             )
+class AirConditionerRemote(TeachingDevice):
+    """Lớp đại diện cho điều khiển điều hòa."""
+
+    def __init__(
+        self,
+        device_id: str,
+        name: str,
+        assigned_room: str,
+        is_responsive: bool = True,
+    ) -> None:
+        super().__init__(device_id, name)
+        if not assigned_room or not assigned_room.strip():
+            raise ValueError("Tên phòng được phân công (assigned_room) không được để trống.")
+        self._assigned_room = assigned_room.strip()
+        self._is_responsive = is_responsive
+
+    @property
+    def assigned_room(self) -> str:
+        return self._assigned_room
+
+    @property
+    def is_responsive(self) -> bool:
+        return self._is_responsive
+
+    def update_response_state(self, is_responsive: bool) -> None:
+        """
+        Cập nhật trạng thái phản hồi của điều khiển điều hòa.
+        Chỉ phát cảnh báo Critical khi chuyển từ phản hồi (True) sang không phản hồi (False).
+        """
+        was_responsive = self._is_responsive
+        self._is_responsive = is_responsive
+
+        if was_responsive and not is_responsive:
+            self._raise_alert(
+                f"Điều khiển điều hòa tại phòng {self._assigned_room} mất phản hồi.",
+                AlertSeverity.CRITICAL,
+            )
