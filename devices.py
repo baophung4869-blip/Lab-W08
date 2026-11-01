@@ -3,137 +3,143 @@
 Mã sinh viên: 20237303
 Họ tên: Phùng Ngọc Bảo
 /****************/
-Module định nghĩa các kiểu liệt kê, cấu trúc dữ liệu sự kiện và cơ chế EventSource/EventView
-đảm bảo chỉ Publisher mới có quyền phát sinh sự kiện.
+Module định nghĩa lớp cơ sở trừu tượng TeachingDevice và các thiết bị dẫn xuất.
 """
+from abc import ABC
 from datetime import datetime
-from enum import Enum
-from typing import Any, Callable, Generic, List, TypeVar
-
-TEventArgs = TypeVar("TEventArgs")
-
-
-class DeviceStatus(Enum):
-    """Trạng thái hiện tại của thiết bị giảng dạy."""
-    AVAILABLE = "Available"
-    BORROWED = "Borrowed"
-    UNDER_MAINTENANCE = "UnderMaintenance"
+from events import (
+    AlertSeverity,
+    DeviceAlertEventArgs,
+    DeviceStatus,
+    DeviceStatusChangedEventArgs,
+    EventSource,
+    EventView,
+)
+from exceptions import InvalidDeviceReadingException
 
 
-class AlertSeverity(Enum):
-    """Mức độ nghiêm trọng của cảnh báo phát sinh từ thiết bị."""
-    INFORMATION = "Information"
-    WARNING = "Warning"
-    CRITICAL = "Critical"
-
-
-class DeviceStatusChangedEventArgs:
-    """Dữ liệu đi kèm sự kiện thay đổi trạng thái thiết bị."""
-
-    def __init__(
-        self,
-        device_id: str,
-        old_status: DeviceStatus,
-        new_status: DeviceStatus,
-        changed_at: datetime,
-    ):
-        self._device_id = device_id
-        self._old_status = old_status
-        self._new_status = new_status
-        self._changed_at = changed_at
-
-    @property
-    def device_id(self) -> str:
-        return self._device_id
-
-    @property
-    def old_status(self) -> DeviceStatus:
-        return self._old_status
-
-    @property
-    def new_status(self) -> DeviceStatus:
-        return self._new_status
-
-    @property
-    def changed_at(self) -> datetime:
-        return self._changed_at
-
-
-class DeviceAlertEventArgs:
-    """Dữ liệu đi kèm sự kiện cảnh báo thiết bị."""
-
-    def __init__(
-        self,
-        device_id: str,
-        message: str,
-        severity: AlertSeverity,
-        occurred_at: datetime,
-    ):
-        self._device_id = device_id
-        self._message = message
-        self._severity = severity
-        self._occurred_at = occurred_at
-
-    @property
-    def device_id(self) -> str:
-        return self._device_id
-
-    @property
-    def message(self) -> str:
-        return self._message
-
-    @property
-    def severity(self) -> AlertSeverity:
-        return self._severity
-
-    @property
-    def occurred_at(self) -> datetime:
-        return self._occurred_at
-
-
-class EventSource(Generic[TEventArgs]):
+class TeachingDevice(ABC):
     """
-    Nguồn sự kiện nội bộ của Publisher.
-    Quản lý danh sách subscriber và cung cấp phương thức invoke() chỉ dành cho Publisher.
+    Lớp cơ sở trừu tượng cho các thiết bị giảng dạy.
+    Đóng vai trò Publisher phát hiện và công bố các sự kiện trạng thái và cảnh báo.
     """
 
-    def __init__(self) -> None:
-        self._handlers: List[Callable[[Any, TEventArgs], None]] = []
+    def __init__(self, device_id: str, name: str) -> None:
+        if not device_id or not device_id.strip():
+            raise ValueError("Mã thiết bị (id) không được để trống.")
+        if not name or not name.strip():
+            raise ValueError("Tên thiết bị (name) không được để trống.")
 
-    def subscribe(self, handler: Callable[[Any, TEventArgs], None]) -> None:
-        """Đăng ký một hàm xử lý sự kiện."""
-        if handler is None:
-            raise ValueError("Handler đăng ký không được null.")
-        self._handlers.append(handler)
+        self._id = device_id.strip()
+        self._name = name.strip()
+        self._status = DeviceStatus.AVAILABLE
 
-    def unsubscribe(self, handler: Callable[[Any, TEventArgs], None]) -> None:
-        """Hủy đăng ký một hàm xử lý sự kiện."""
-        if handler in self._handlers:
-            self._handlers.remove(handler)
+        # Nguồn phát sự kiện nội bộ (chỉ lớp này và lớp con được quyền kích hoạt)
+        self._status_changed_source = EventSource[DeviceStatusChangedEventArgs]()
+        self._alert_raised_source = EventSource[DeviceAlertEventArgs]()
 
-    def invoke(self, sender: Any, args: TEventArgs) -> None:
-        """Kích hoạt tất cả các handler đã đăng ký (chỉ gọi từ bên trong Publisher)."""
-        for handler in list(self._handlers):
-            handler(sender, args)
+        # Giao diện công khai chỉ cho phép += và -= từ bên ngoài
+        self._status_changed_view = EventView(self._status_changed_source)
+        self._alert_raised_view = EventView(self._alert_raised_source)
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def status(self) -> DeviceStatus:
+        return self._status
+
+    @property
+    def status_changed(self) -> EventView[DeviceStatusChangedEventArgs]:
+        """Sự kiện công khai khi trạng thái thay đổi (chỉ hỗ trợ += và -=)."""
+        return self._status_changed_view
+
+    @status_changed.setter
+    def status_changed(self, value: EventView[DeviceStatusChangedEventArgs]) -> None:
+        if value is not self._status_changed_view:
+            raise AttributeError("Không được phép gán đè trực tiếp đối tượng sự kiện.")
+
+    @property
+    def alert_raised(self) -> EventView[DeviceAlertEventArgs]:
+        """Sự kiện công khai khi phát sinh cảnh báo (chỉ hỗ trợ += và -=)."""
+        return self._alert_raised_view
+
+    @alert_raised.setter
+    def alert_raised(self, value: EventView[DeviceAlertEventArgs]) -> None:
+        if value is not self._alert_raised_view:
+            raise AttributeError("Không được phép gán đè trực tiếp đối tượng sự kiện.")
+
+    def change_status(self, new_status: DeviceStatus) -> None:
+        """
+        Cập nhật trạng thái thiết bị và phát sinh sự kiện nếu trạng thái thay đổi.
+        """
+        if new_status == self._status:
+            return
+
+        old_status = self._status
+        self._status = new_status
+
+        self._on_status_changed(
+            DeviceStatusChangedEventArgs(
+                device_id=self._id,
+                old_status=old_status,
+                new_status=new_status,
+                changed_at=datetime.now(),
+            )
+        )
+
+    def _raise_alert(self, message: str, severity: AlertSeverity) -> None:
+        """Phương thức bảo vệ để lớp thiết bị hoặc lớp dẫn xuất phát cảnh báo."""
+        self._on_alert_raised(
+            DeviceAlertEventArgs(
+                device_id=self._id,
+                message=message,
+                severity=severity,
+                occurred_at=datetime.now(),
+            )
+        )
+
+    def _on_status_changed(self, e: DeviceStatusChangedEventArgs) -> None:
+        """Kích hoạt sự kiện status_changed; lớp dẫn xuất có thể mở rộng."""
+        self._status_changed_source.invoke(self, e)
+
+    def _on_alert_raised(self, e: DeviceAlertEventArgs) -> None:
+        """Kích hoạt sự kiện alert_raised; lớp dẫn xuất có thể mở rộng."""
+        self._alert_raised_source.invoke(self, e)
 
 
-class EventView(Generic[TEventArgs]):
-    """
-    Giao diện sự kiện công khai cho phép mã bên ngoài đăng ký (+=) và hủy đăng ký (-=),
-    nhưng hoàn toàn ngăn chặn việc tự ý phát sinh sự kiện (không có invoke).
-    """
+class ProjectorRemote(TeachingDevice):
+    """Lớp đại diện cho điều khiển máy chiếu."""
 
-    def __init__(self, source: EventSource[TEventArgs]) -> None:
-        self._source = source
+    def __init__(self, device_id: str, name: str, initial_battery: int = 100) -> None:
+        super().__init__(device_id, name)
+        if not (0 <= initial_battery <= 100):
+            raise InvalidDeviceReadingException(self.id, initial_battery)
+        self._battery_level = initial_battery
 
-    def __iadd__(
-        self, handler: Callable[[Any, TEventArgs], None]
-    ) -> "EventView[TEventArgs]":
-        self._source.subscribe(handler)
-        return self
+    @property
+    def battery_level(self) -> int:
+        return self._battery_level
 
-    def __isub__(
-        self, handler: Callable[[Any, TEventArgs], None]
-    ) -> "EventView[TEventArgs]":
-        self._source.unsubscribe(handler)
-        return self
+    def update_battery_level(self, new_level: int) -> None:
+        """Cập nhật mức pin (0-100) và phát cảnh báo khi pin yếu hoặc cạn pin."""
+        if not (0 <= new_level <= 100):
+            raise InvalidDeviceReadingException(self.id, new_level)
+
+        self._battery_level = new_level
+
+        if new_level == 0:
+            self._raise_alert(
+                "Điều khiển máy chiếu đã cạn sạch pin (0%).",
+                AlertSeverity.CRITICAL,
+            )
+        elif new_level < 20:
+            self._raise_alert(
+                f"Mức pin điều khiển máy chiếu xuống thấp ({new_level}%).",
+                AlertSeverity.WARNING,
+            )
