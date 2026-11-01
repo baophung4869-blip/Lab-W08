@@ -199,3 +199,93 @@ class AirConditionerRemote(TeachingDevice):
                 f"Điều khiển điều hòa tại phòng {self._assigned_room} mất phản hồi.",
                 AlertSeverity.CRITICAL,
             )
+class WirelessMicrophone(TeachingDevice):
+    """Lớp đại diện cho micro không dây."""
+
+    def __init__(
+        self,
+        device_id: str,
+        name: str,
+        initial_battery: int = 100,
+        initial_signal: int = 100,
+    ) -> None:
+        super().__init__(device_id, name)
+        if not (0 <= initial_battery <= 100):
+            raise InvalidDeviceReadingException(self.id, initial_battery)
+        if not (0 <= initial_signal <= 100):
+            raise InvalidDeviceReadingException(self.id, initial_signal)
+
+        self._battery_level = initial_battery
+        self._signal_quality = initial_signal
+
+    @property
+    def battery_level(self) -> int:
+        return self._battery_level
+
+    @property
+    def signal_quality(self) -> int:
+        return self._signal_quality
+
+    @staticmethod
+    def _get_battery_zone(level: int) -> Optional[AlertSeverity]:
+        """Xác định vùng cảnh báo cho mức pin của micro (dưới 30% là Warning, 0% là Critical)."""
+        if level == 0:
+            return AlertSeverity.CRITICAL
+        if level < 30:
+            return AlertSeverity.WARNING
+        return None
+
+    @staticmethod
+    def _get_signal_zone(quality: int) -> Optional[AlertSeverity]:
+        """Xác định vùng cảnh báo cho chất lượng tín hiệu (dưới 40% là Warning, 0% là Critical)."""
+        if quality == 0:
+            return AlertSeverity.CRITICAL
+        if quality < 40:
+            return AlertSeverity.WARNING
+        return None
+
+    def update_battery_level(self, new_level: int) -> None:
+        """Cập nhật mức pin (0-100) của micro và phát cảnh báo khi chuyển vùng."""
+        if not (0 <= new_level <= 100):
+            raise InvalidDeviceReadingException(self.id, new_level)
+
+        old_zone = self._get_battery_zone(self._battery_level)
+        new_zone = self._get_battery_zone(new_level)
+        self._battery_level = new_level
+
+        if new_zone is None or new_zone == old_zone:
+            return
+
+        if new_zone == AlertSeverity.CRITICAL:
+            self._raise_alert(
+                "Micro không dây đã cạn sạch pin (0%).",
+                AlertSeverity.CRITICAL,
+            )
+        elif new_zone == AlertSeverity.WARNING:
+            self._raise_alert(
+                f"Mức pin micro không dây xuống thấp ({new_level}% < 30%).",
+                AlertSeverity.WARNING,
+            )
+
+    def update_signal_quality(self, new_quality: int) -> None:
+        """Cập nhật chất lượng tín hiệu (0-100) của micro và phát cảnh báo khi chuyển vùng."""
+        if not (0 <= new_quality <= 100):
+            raise InvalidDeviceReadingException(self.id, new_quality)
+
+        old_zone = self._get_signal_zone(self._signal_quality)
+        new_zone = self._get_signal_zone(new_quality)
+        self._signal_quality = new_quality
+
+        if new_zone is None or new_zone == old_zone:
+            return
+
+        if new_zone == AlertSeverity.CRITICAL:
+            self._raise_alert(
+                "Micro không dây mất hoàn toàn tín hiệu (0%).",
+                AlertSeverity.CRITICAL,
+            )
+        elif new_zone == AlertSeverity.WARNING:
+            self._raise_alert(
+                f"Chất lượng tín hiệu micro không dây yếu ({new_quality}% < 40%).",
+                AlertSeverity.WARNING,
+            )
