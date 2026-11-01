@@ -3,7 +3,8 @@
 Mã sinh viên: 20237303
 Họ tên: Phùng Ngọc Bảo
 /****************/
-Module định nghĩa các kiểu liệt kê, cấu trúc dữ liệu sự kiện và cơ chế EventHandler.
+Module định nghĩa các kiểu liệt kê, cấu trúc dữ liệu sự kiện và cơ chế EventSource/EventView
+đảm bảo chỉ Publisher mới có quyền phát sinh sự kiện, chống đăng ký trùng và cô lập lỗi.
 """
 from datetime import datetime
 from enum import Enum
@@ -90,28 +91,59 @@ class DeviceAlertEventArgs:
         return self._occurred_at
 
 
-class EventHandler(Generic[TEventArgs]):
-    """Lớp quản lý danh sách các hàm xử lý sự kiện (delegate multicast) cơ bản."""
+class EventSource(Generic[TEventArgs]):
+    """
+    Nguồn sự kiện nội bộ của Publisher.
+    Quản lý danh sách subscriber, chống đăng ký trùng lặp và cô lập ngoại lệ khi invoke.
+    """
 
     def __init__(self) -> None:
         self._handlers: List[Callable[[Any, TEventArgs], None]] = []
 
+    def subscribe(self, handler: Callable[[Any, TEventArgs], None]) -> None:
+        """Đăng ký một hàm xử lý sự kiện (bỏ qua nếu handler đã tồn tại)."""
+        if handler is None:
+            raise ValueError("Handler đăng ký không được null.")
+        if handler not in self._handlers:
+            self._handlers.append(handler)
+
+    def unsubscribe(self, handler: Callable[[Any, TEventArgs], None]) -> None:
+        """Hủy đăng ký một hàm xử lý sự kiện."""
+        if handler in self._handlers:
+            self._handlers.remove(handler)
+
+    def invoke(self, sender: Any, args: TEventArgs) -> None:
+        """
+        Kích hoạt tất cả các handler đã đăng ký.
+        Cô lập ngoại lệ của từng subscriber để đảm bảo tính ổn định của chuỗi sự kiện.
+        """
+        for handler in list(self._handlers):
+            try:
+                handler(sender, args)
+            except Exception as ex:
+                handler_name = getattr(handler, "__qualname__", str(handler))
+                print(
+                    f"[EventError] Subscriber '{handler_name}' gặp lỗi khi xử lý sự kiện: {ex}"
+                )
+
+
+class EventView(Generic[TEventArgs]):
+    """
+    Giao diện sự kiện công khai cho phép mã bên ngoài đăng ký (+=) và hủy đăng ký (-=),
+    nhưng hoàn toàn ngăn chặn việc tự ý phát sinh sự kiện (không có invoke).
+    """
+
+    def __init__(self, source: EventSource[TEventArgs]) -> None:
+        self._source = source
+
     def __iadd__(
         self, handler: Callable[[Any, TEventArgs], None]
-    ) -> "EventHandler[TEventArgs]":
-        """Đăng ký thêm một subscriber handler bằng toán tử +=."""
-        self._handlers.append(handler)
+    ) -> "EventView[TEventArgs]":
+        self._source.subscribe(handler)
         return self
 
     def __isub__(
         self, handler: Callable[[Any, TEventArgs], None]
-    ) -> "EventHandler[TEventArgs]":
-        """Hủy đăng ký một subscriber handler bằng toán tử -=."""
-        if handler in self._handlers:
-            self._handlers.remove(handler)
+    ) -> "EventView[TEventArgs]":
+        self._source.unsubscribe(handler)
         return self
-
-    def invoke(self, sender: Any, args: TEventArgs) -> None:
-        """Kích hoạt tuần tự tất cả các handler đã đăng ký."""
-        for handler in list(self._handlers):
-            handler(sender, args)
